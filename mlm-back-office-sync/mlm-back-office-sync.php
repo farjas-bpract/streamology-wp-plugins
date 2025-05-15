@@ -20,7 +20,8 @@ class MLM_Back_Office_Sync {
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('woocommerce_order_status_completed', [$this, 'sync_purchase']);
-        add_action('woocommerce_new_product', [$this, 'sync_product_creation']);
+        add_action('woocommerce_new_product', [$this, 'sync_product']);
+        add_action('woocommerce_update_product', [$this, 'sync_product']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
         add_action('wp_ajax_mlm_sync_all_products', [$this, 'sync_all_products']);
         register_activation_hook(__FILE__, [$this, 'activate']);
@@ -80,7 +81,7 @@ class MLM_Back_Office_Sync {
             add_settings_error(
                 'mlm_api_base_url',
                 'invalid_url',
-                'Please enter a valid URL (e.g., https://mlm-api.com/api).',
+                'Please enter a valid URL (e.g., https://mlm-api.com).',
                 'error'
             );
             return get_option('mlm_api_base_url');
@@ -92,7 +93,7 @@ class MLM_Back_Office_Sync {
     public function api_base_url_field() {
         $value = get_option('mlm_api_base_url', '');
         echo '<input type="url" name="mlm_api_base_url" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Enter the base URL of the MLM API (e.g., https://mlm-api.com/api).</p>';
+        echo '<p class="description">Enter the base URL of the MLM API (e.g., https://mlm-api.com). The plugin will append /api/wp/ to this URL for API calls.</p>';
     }
 
     // Render API Key field
@@ -107,6 +108,7 @@ class MLM_Back_Office_Sync {
         ?>
         <div class="wrap">
             <h1>MLM Back Office Sync Settings</h1>
+            <button id="mlm-sync-products" class="button button-primary">Sync All Products</button>
             <?php settings_errors(); ?>
             <form method="post" action="options.php">
                 <?php
@@ -115,7 +117,6 @@ class MLM_Back_Office_Sync {
                 submit_button();
                 ?>
             </form>
-            <button id="mlm-sync-products" class="button button-primary">Sync All Products</button>
         </div>
         <?php
     }
@@ -159,7 +160,7 @@ class MLM_Back_Office_Sync {
                 continue;
             }
 
-            $response = wp_remote_post($api_url . '/wordpress-product', [
+            $response = wp_remote_post($api_url . '/api/wp/wordpress-product', [
                 'headers' => [
                     'X-API-KEY' => $api_key,
                     'Content-Type' => 'application/json',
@@ -218,7 +219,7 @@ class MLM_Back_Office_Sync {
 
         foreach ($items as $item) {
             $product_id = $item->get_product_id();
-            $response = wp_remote_post($api_url . '/external-wordpress-purchase', [
+            $response = wp_remote_post($api_url . '/api/wp/external-wordpress-purchase', [
                 'headers' => [
                     'X-API-KEY' => $api_key,
                     'Content-Type' => 'application/json',
@@ -248,8 +249,8 @@ class MLM_Back_Office_Sync {
         }
     }
 
-    // Sync new product to MLM API
-    public function sync_product_creation($product_id) {
+    // Sync product to MLM API
+    public function sync_product($product_id) {
         $api_url = get_option('mlm_api_base_url');
         $api_key = get_option('mlm_api_key');
 
@@ -270,7 +271,7 @@ class MLM_Back_Office_Sync {
             return;
         }
 
-        $response = wp_remote_post($api_url . '/wordpress-product', [
+        $response = wp_remote_post($api_url . '/api/wp/wordpress-product', [
             'headers' => [
                 'X-API-KEY' => $api_key,
                 'Content-Type' => 'application/json',
