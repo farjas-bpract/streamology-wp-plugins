@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: MLM Back Office Sync
-Description: Syncs WooCommerce products and purchases with an MLM back office by sending product details and purchase data to a Laravel API.
-Version: 1.2.0
+Description: Syncs WooCommerce products and purchases with an MLM back office by sending product details and purchase data to a Laravel API. Includes log viewer to read and clear logs.
+Version: 1.3.0
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -18,7 +18,10 @@ class MLM_Back_Office_Sync {
     public function __construct() {
         $this->log_file = WP_CONTENT_DIR . '/mlm-back-office-sync.log';
         add_action('admin_menu', [$this, 'add_settings_page']);
+        add_action('admin_menu', [$this, 'add_log_viewer_page']);
         add_action('admin_init', [$this, 'register_settings']);
+        add_action('admin_init', [$this, 'handle_log_download']);
+        add_action('admin_init', [$this, 'handle_log_clear']);
         add_action('woocommerce_order_status_completed', [$this, 'sync_purchase']);
         add_action('woocommerce_new_product', [$this, 'sync_product']);
         add_action('woocommerce_update_product', [$this, 'sync_product']);
@@ -33,10 +36,22 @@ class MLM_Back_Office_Sync {
         add_submenu_page(
             'woocommerce',
             'MLM Back Office Sync Settings',
-            'MLM Sync',
+            'MLM Sync Settings',
             'manage_options',
             'mlm-back-office-sync',
             [$this, 'render_settings_page']
+        );
+    }
+
+    // Add log viewer page under WooCommerce menu
+    public function add_log_viewer_page() {
+        add_submenu_page(
+            'woocommerce',
+            'MLM Sync Log',
+            'MLM Sync Log',
+            'manage_options',
+            'mlm-sync-log',
+            [$this, 'render_log_viewer_page']
         );
     }
 
@@ -119,6 +134,66 @@ class MLM_Back_Office_Sync {
             </form>
         </div>
         <?php
+    }
+
+    // Render log viewer page
+    public function render_log_viewer_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('You do not have permission to access this page.');
+        }
+        ?>
+        <div class="wrap">
+            <h1>MLM Back Office Sync Log</h1>
+            <p>
+                <a href="<?php echo esc_url(wp_nonce_url(add_query_arg('mlm_download_log', '1'), 'mlm_download_log')); ?>" class="button">Download Log File</a>
+                <a href="<?php echo esc_url(wp_nonce_url(add_query_arg('mlm_clear_log', '1'), 'mlm_clear_log')); ?>" class="button" onclick="return confirm('Are you sure you want to clear the log?');">Clear Log File</a>
+            </p>
+            <?php
+            // Display success or error notices
+            if (isset($_GET['mlm_clear_log']) && check_admin_referer('mlm_clear_log')) {
+                echo '<div class="notice notice-success is-dismissible"><p>Log file cleared successfully.</p></div>';
+            }
+            ?>
+            <pre style="background: #f5f5f5; padding: 10px; max-height: 600px; overflow-y: auto;">
+                <?php echo esc_html($this->read_log_file()); ?>
+            </pre>
+        </div>
+        <?php
+    }
+
+    // Read log file
+    private function read_log_file() {
+        if (file_exists($this->log_file)) {
+            return file_get_contents($this->log_file);
+        } else {
+            return 'Log file does not exist.';
+        }
+    }
+
+    // Handle log download
+    public function handle_log_download() {
+        if (isset($_GET['mlm_download_log']) && current_user_can('manage_options') && check_admin_referer('mlm_download_log')) {
+            if (file_exists($this->log_file)) {
+                header('Content-Type: text/plain');
+                header('Content-Disposition: attachment; filename="mlm-back-office-sync.log"');
+                readfile($this->log_file);
+                exit;
+            } else {
+                wp_die('Log file does not exist.');
+            }
+        }
+    }
+
+    // Handle log clear
+    public function handle_log_clear() {
+        if (isset($_GET['mlm_clear_log']) && current_user_can('manage_options') && check_admin_referer('mlm_clear_log')) {
+            if (file_exists($this->log_file)) {
+                file_put_contents($this->log_file, '');
+            }
+            // Redirect to avoid resubmission
+            wp_safe_redirect(add_query_arg(['page' => 'mlm-sync-log', 'mlm_clear_log' => '1'], admin_url('admin.php')));
+            exit;
+        }
     }
 
     // Enqueue scripts
