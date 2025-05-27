@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: MLM Back Office Sync
-Description: Syncs WooCommerce products and purchases with an MLM back office by sending product details and purchase data to a Laravel API. Includes log viewer to read and clear logs.
-Version: 1.3.0
+Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office by sending data to a Laravel API. Includes log viewer.
+Version: 1.4.0
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -27,6 +27,9 @@ class MLM_Back_Office_Sync {
         add_action('woocommerce_update_product', [$this, 'sync_product']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
         add_action('wp_ajax_mlm_sync_all_products', [$this, 'sync_all_products']);
+        add_filter('woocommerce_process_registration_errors', [$this, 'validate_registration'], 10, 3);
+        add_action('woocommerce_checkout_process', [$this, 'validate_checkout_registration']);
+        add_action('user_register', [$this, 'sync_user_registration'], 10, 1);
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
     }
@@ -96,7 +99,7 @@ class MLM_Back_Office_Sync {
             add_settings_error(
                 'mlm_api_base_url',
                 'invalid_url',
-                'Please enter a valid URL (e.g., https://mlm-api.com).',
+                'Please enter a valid URL.',
                 'error'
             );
             return get_option('mlm_api_base_url');
@@ -108,7 +111,7 @@ class MLM_Back_Office_Sync {
     public function api_base_url_field() {
         $value = get_option('mlm_api_base_url', '');
         echo '<input type="url" name="mlm_api_base_url" value="' . esc_attr($value) . '" class="regular-text" />';
-        echo '<p class="description">Enter the base URL of the MLM API (e.g., https://mlm-api.com). The plugin will append /api/wp/ to this URL for API calls.</p>';
+        echo '<p class="description">Enter the base URL of the MLM API. The plugin will append /api/wp/ to this URL for API calls.</p>';
     }
 
     // Render API Key field
@@ -149,7 +152,6 @@ class MLM_Back_Office_Sync {
                 <a href="<?php echo esc_url(wp_nonce_url(add_query_arg('mlm_clear_log', '1'), 'mlm_clear_log')); ?>" class="button" onclick="return confirm('Are you sure you want to clear the log?');">Clear Log File</a>
             </p>
             <?php
-            // Display success or error notices
             if (isset($_GET['mlm_clear_log']) && check_admin_referer('mlm_clear_log')) {
                 echo '<div class="notice notice-success is-dismissible"><p>Log file cleared successfully.</p></div>';
             }
@@ -190,8 +192,7 @@ class MLM_Back_Office_Sync {
             if (file_exists($this->log_file)) {
                 file_put_contents($this->log_file, '');
             }
-            // Redirect to avoid resubmission
-            wp_safe_redirect(add_query_arg(['page' => 'mlm-sync-log', 'mlm_clear_log' => '1'], admin_url('admin.php')));
+            wp_safe_redirect(add_query_arg(['page' => 'mlm-sync-log'], admin_url('admin.php')));
             exit;
         }
     }
@@ -319,7 +320,7 @@ class MLM_Back_Office_Sync {
                 $this->log_success("Purchase synced for product ID $product_id, user $user_email");
             } else {
                 $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
-                $this->log_error("Purchase sync error for product ID $product_id: HTTP $response_code - $error_message");
+                $this->log_error("Purchase sync error for product ID $product_id: HTTP $response_code - $error_message response:" . print_r($data, true) );
             }
         }
     }
@@ -374,6 +375,257 @@ class MLM_Back_Office_Sync {
             $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
             $this->log_error("Product sync error for ID $product_id: HTTP $response_code - $error_message");
         }
+    }
+
+    // Validate user registration via API (for standalone registration page)
+    public function validate_registration($errors, $username, $password, $email) {
+        $this->log_success("Standalone registration validation for email: $email");
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in validate_registration.');
+            $errors->add('api_config_error', 'API configuration is missing.');
+            return $errors;
+        }
+
+        $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : '';
+
+        if (empty($password)) {
+            $this->log_error('Password field is empty in standalone registration form.');
+            $errors->add('password_error', 'Password is required.');
+            return $errors;
+        }
+
+        if (empty($username)) {
+            $username = sanitize_user(current(explode('@', $email)), true);
+            $append = 1;
+            $original_username = $username;
+            while (username_exists($username)) {
+                $username = $original_username . $append;
+                $append++;
+            }
+        }
+
+        $data = [
+            'username' => $username,
+            'email' => $email,
+            'password' => $password,
+        ];
+
+        if (!empty($referral)) {
+            $data['referral'] = $referral;
+        }
+
+        $optional_fields = ['name', 'address', 'mobile', 'gender', 'country', 'city', 'zipcode', 'date_of_birth'];
+        foreach ($optional_fields as $field) {
+            if (isset($_POST[$field])) {
+                $data[$field] = sanitize_text_field($_POST[$field]);
+            }
+        }
+
+        // $this->log_success("Attempting standalone validation API call with data: " . json_encode($data));
+        $response = wp_remote_post($api_url . '/api/wp/validate-user', [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode($data),
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            $error_message = $response->get_error_message();
+            $this->log_error("Standalone validation API call failed: $error_message");
+            $errors->add('api_error', 'Failed to connect to MLM API: ' . $error_message);
+            return $errors;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $this->log_success("Standalone validation API response code: $response_code, body: $body");
+        $result = json_decode($body, true);
+
+        if ($response_code === 200 && isset($result['status']) && $result['status']) {
+            $transient_key = 'mlm_temp_password_' . md5($email);
+            set_transient($transient_key, $password, 300);
+            $this->log_success("Standalone validation successful, transient set with key: $transient_key");
+            return $errors;
+        } else {
+            $this->log_error("Standalone validation API failed: " . print_r($result, true));
+            if (isset($result['errors'])) {
+                foreach ($result['errors'] as $field => $messages) {
+                    foreach ($messages as $message) {
+                        $errors->add($field . '_error', $message);
+                    }
+                }
+            } else {
+                $errors->add('api_error', 'MLM API validation failed: ' . ($result['message'] ?? 'Unknown error'));
+            }
+            return $errors;
+        }
+    }
+
+    // Validate user registration during checkout
+    public function validate_checkout_registration() {
+        // if (!isset($_POST['createaccount']) || !$_POST['createaccount']) {
+        //     $this->log_success("Checkout registration not requested (createaccount not set).");
+        //     return;
+        // }
+
+        $this->log_success("Checkout registration validation started.");
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in validate_checkout_registration.');
+            wc_add_notice(__('API configuration is missing.', 'mlm-back-office-sync'), 'error');
+            return;
+        }
+
+        $email = isset($_POST['billing_email']) ? sanitize_email($_POST['billing_email']) : '';
+        $password = isset($_POST['account_password']) ? sanitize_text_field($_POST['account_password']) : '';
+        $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : '';
+
+        if (empty($email) || empty($password)) {
+            $this->log_error('Email or password missing in checkout registration form.');
+            wc_add_notice(__('Email and password are required for registration.', 'mlm-back-office-sync'), 'error');
+            return;
+        }
+
+        $username = sanitize_user(current(explode('@', $email)), true);
+        $append = 1;
+        $original_username = $username;
+        while (username_exists($username)) {
+            $username = $original_username . $append;
+            $append++;
+        }
+
+        $data = [
+            'username' => $username,
+            'email' => $email,
+            'password' => $password,
+        ];
+
+        if (!empty($referral)) {
+            $data['referral'] = $referral;
+        }
+
+        $optional_fields = ['name', 'address', 'mobile', 'gender', 'country', 'city', 'zipcode', 'date_of_birth'];
+        foreach ($optional_fields as $field) {
+            if (isset($_POST[$field])) {
+                $data[$field] = sanitize_text_field($_POST[$field]);
+            }
+        }
+
+        // $this->log_success("Attempting checkout validation API call with data: " . json_encode($data));
+        $response = wp_remote_post($api_url . '/api/wp/validate-user', [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode($data),
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            $error_message = $response->get_error_message();
+            $this->log_error("Checkout validation API call failed: $error_message");
+            wc_add_notice(__('Failed to connect to MLM API: ' . $error_message, 'mlm-back-office-sync'), 'error');
+            return;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $this->log_success("Checkout validation API response code: $response_code, body: $body");
+        $result = json_decode($body, true);
+
+        if ($response_code === 200 && isset($result['status']) && $result['status']) {
+            $transient_key = 'mlm_temp_password_' . md5($email);
+            set_transient($transient_key, $password, 300);
+            $this->log_success("Checkout validation successful, transient set with key: $transient_key");
+        } else {
+            $this->log_error("Checkout validation API failed: " . print_r($result, true));
+            if (isset($result['errors'])) {
+                foreach ($result['errors'] as $field => $messages) {
+                    foreach ($messages as $message) {
+                        wc_add_notice($message, 'error');
+                    }
+                }
+            } else {
+                wc_add_notice(__('MLM API validation failed: ' . ($result['message'] ?? 'Unknown error'), 'mlm-back-office-sync'), 'error');
+            }
+        }
+    }
+
+    // Sync user registration to MLM API
+    public function sync_user_registration($user_id) {
+        $this->log_success("User registration sync started for user ID: $user_id");
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in sync_user_registration.');
+            return;
+        }
+
+        $user = get_user_by('id', $user_id);
+        if (!$user) {
+            $this->log_error("User not found for ID: $user_id");
+            return;
+        }
+
+        $email = $user->user_email;
+        $transient_key = 'mlm_temp_password_' . md5($email);
+        $password = get_transient($transient_key);
+
+        // $this->log_success("Attempting to retrieve transient password for user ID: $user_id, email: $email, key: $transient_key");
+        if (!$password) {
+            $this->log_error("Transient password not found for user ID: $user_id, email: $email");
+            return;
+        }
+
+        $data = [
+            'username' => $user->user_login,
+            'email' => $email,
+            'password' => $password,
+            'wp_user_id' => $user_id,
+        ];
+
+        $first_name = get_user_meta($user_id, 'first_name', true);
+        $last_name = get_user_meta($user_id, 'last_name', true);
+        if ($first_name || $last_name) {
+            $data['name'] = trim($first_name . ' ' . $last_name);
+        }
+
+        // $this->log_success("Attempting user sync API call for user ID: $user_id with data: " . json_encode($data));
+        $response = wp_remote_post($api_url . '/api/wp/register-user', [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode($data),
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            $this->log_error('User sync failed for ID ' . $user_id . ': ' . $response->get_error_message());
+            delete_transient($transient_key);
+            return;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $result = json_decode($body, true);
+
+        if ($response_code === 200 && isset($result['status']) && $result['status']) {
+            $this->log_success("User synced: ID $user_id, Username: " . $user->user_login);
+        } else {
+            $error_message = isset($result['message']) ? $result['message'] : 'Unknown error';
+            $this->log_error("User sync error for ID $user_id: HTTP $response_code - $error_message");
+        }
+
+        delete_transient($transient_key);
     }
 
     // Log error to file
