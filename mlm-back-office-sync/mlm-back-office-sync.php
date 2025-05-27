@@ -378,7 +378,8 @@ class MLM_Back_Office_Sync {
     }
 
     // Validate user registration via API (for standalone registration page)
-    public function validate_registration($errors, $username, $password, $email) {
+    public function validate_registration($errors, $username, $password) {
+        $email = isset($_POST['email']) ? sanitize_text_field($_POST['email']) : '';
         $this->log_success("Standalone registration validation for email: $email");
         $api_url = get_option('mlm_api_base_url');
         $api_key = get_option('mlm_api_key');
