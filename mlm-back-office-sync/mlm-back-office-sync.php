@@ -473,6 +473,14 @@ class MLM_Back_Office_Sync {
         //     $this->log_success("Checkout registration not requested (createaccount not set).");
         //     return;
         // }
+        $email = isset($_POST['billing_email']) ? sanitize_email($_POST['billing_email']) : '';
+        $password = isset($_POST['account_password']) ? sanitize_text_field($_POST['account_password']) : '';
+        $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : '';
+
+        if (empty($email) || empty($password)) {
+            $this->log_success("Checkout registration not requested.");
+            return;
+        }
 
         $this->log_success("Checkout registration validation started.");
         $api_url = get_option('mlm_api_base_url');
@@ -481,16 +489,6 @@ class MLM_Back_Office_Sync {
         if (empty($api_url) || empty($api_key)) {
             $this->log_error('API URL or API Key not configured in validate_checkout_registration.');
             wc_add_notice(__('API configuration is missing.', 'mlm-back-office-sync'), 'error');
-            return;
-        }
-
-        $email = isset($_POST['billing_email']) ? sanitize_email($_POST['billing_email']) : '';
-        $password = isset($_POST['account_password']) ? sanitize_text_field($_POST['account_password']) : '';
-        $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : '';
-
-        if (empty($email) || empty($password)) {
-            $this->log_error('Email or password missing in checkout registration form.');
-            wc_add_notice(__('Email and password are required for registration.', 'mlm-back-office-sync'), 'error');
             return;
         }
 
