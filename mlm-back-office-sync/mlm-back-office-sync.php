@@ -2,7 +2,7 @@
 /*
 Plugin Name: MLM Back Office Sync
 Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office and helps SSO Login. Includes log viewer.
-Version: 1.5.0
+Version: 1.5.1
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -326,8 +326,17 @@ class MLM_Back_Office_Sync {
             return;
         }
 
+        // Check if order has already been synced
+        $sync_status = $order->get_meta('_mlm_sync_status');
+        if ($sync_status === 'synced') {
+            $this->log_success("Order ID $order_id already synced, skipping.");
+            return;
+        }
+
         $user_email = $order->get_billing_email();
         $items = $order->get_items();
+
+        $all_items_synced = true;
 
         foreach ($items as $item) {
             $product_id = $item->get_product_id();
@@ -345,6 +354,7 @@ class MLM_Back_Office_Sync {
 
             if (is_wp_error($response)) {
                 $this->log_error('Purchase sync failed for product ID ' . $product_id . ': ' . $response->get_error_message());
+                $all_items_synced = false;
                 continue;
             }
 
@@ -356,8 +366,18 @@ class MLM_Back_Office_Sync {
                 $this->log_success("Purchase synced for product ID $product_id, user $user_email");
             } else {
                 $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
-                $this->log_error("Purchase sync error for product ID $product_id: HTTP $response_code - $error_message response:" . print_r($data, true) );
+                $this->log_error("Purchase sync error for product ID $product_id: HTTP $response_code - $error_message response:" . print_r($data, true));
+                $all_items_synced = false;
             }
+        }
+    
+        // Mark order as synced only if all items were successfully synced
+        if ($all_items_synced) {
+            $order->update_meta_data('_mlm_sync_status', 'synced');
+            $order->save();
+            $this->log_success("Order ID $order_id marked as synced.");
+        } else {
+            $this->log_error("Order ID $order_id not marked as synced due to partial failures.");
         }
     }
 
