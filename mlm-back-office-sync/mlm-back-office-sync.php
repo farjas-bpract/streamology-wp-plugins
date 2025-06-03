@@ -17,7 +17,7 @@ class MLM_Back_Office_Sync {
 
     public function __construct() {
         $this->log_file = WP_CONTENT_DIR . '/mlm-back-office-sync.log';
-        add_action('init', 'mlm_sso_login', 1);
+        add_action('init', [$this, 'mlm_sso_login'], 1);
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_menu', [$this, 'add_log_viewer_page']);
         add_action('admin_init', [$this, 'register_settings']);
@@ -619,6 +619,8 @@ class MLM_Back_Office_Sync {
         $api_url = get_option('mlm_api_base_url');
         $api_key = get_option('mlm_api_key');
 
+        $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : 1;
+
         if (empty($api_url) || empty($api_key)) {
             $this->log_error('API URL or API Key not configured in sync_user_registration.');
             return;
@@ -645,6 +647,7 @@ class MLM_Back_Office_Sync {
             'email' => $email,
             'password' => $password,
             'wp_user_id' => $user_id,
+            'referral' => $referral,
         ];
 
         $first_name = get_user_meta($user_id, 'first_name', true);
@@ -721,7 +724,7 @@ class MLM_Back_Office_Sync {
     }
 
     // redirect to back office
-    private function handle_mlm_redirect() {
+    public function handle_mlm_redirect() {
         global $wp_query;
         if (isset($wp_query->query_vars['mlm_redirect'])) {
             $path = ltrim($wp_query->query_vars['mlm_redirect'], '/');
