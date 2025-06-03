@@ -23,7 +23,7 @@ class MLM_Back_Office_Sync {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_log_download']);
         add_action('admin_init', [$this, 'handle_log_clear']);
-        add_action('woocommerce_order_status_completed', [$this, 'sync_purchase']);
+        add_action('woocommerce_order_status_processing', [$this, 'sync_purchase']);
         add_action('woocommerce_new_product', [$this, 'sync_product']);
         add_action('woocommerce_update_product', [$this, 'sync_product']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
