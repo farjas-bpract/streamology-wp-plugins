@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: MLM Back Office Sync
-Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office by sending data to a Laravel API. Includes log viewer.
-Version: 1.4.0
+Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office and helps SSO Login. Includes log viewer.
+Version: 1.5.0
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -17,6 +17,7 @@ class MLM_Back_Office_Sync {
 
     public function __construct() {
         $this->log_file = WP_CONTENT_DIR . '/mlm-back-office-sync.log';
+        add_action('init', 'mlm_sso_login', 1);
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_menu', [$this, 'add_log_viewer_page']);
         add_action('admin_init', [$this, 'register_settings']);
@@ -32,6 +33,7 @@ class MLM_Back_Office_Sync {
         add_action('user_register', [$this, 'sync_user_registration'], 10, 1);
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
+        add_action('template_redirect', [$this, 'handle_mlm_redirect']);
     }
 
     // Add settings page under WooCommerce menu
@@ -67,6 +69,10 @@ class MLM_Back_Office_Sync {
             'sanitize_callback' => 'sanitize_text_field',
         ]);
 
+        register_setting('mlm_back_office_sync_group', 'mlm_frontend_url', [
+            'sanitize_callback' => [$this, 'sanitize_frontend_url'],
+        ]);
+
         add_settings_section(
             'mlm_api_settings',
             'API Configuration',
@@ -89,6 +95,14 @@ class MLM_Back_Office_Sync {
             'mlm-back-office-sync',
             'mlm_api_settings'
         );
+
+        add_settings_field(
+            'mlm_frontend_url',
+            'Frontend URL',
+            [$this, 'frontend_url_field'],
+            'mlm-back-office-sync',
+            'mlm_api_settings'
+        );
     }
 
     // Sanitize URL
@@ -107,6 +121,21 @@ class MLM_Back_Office_Sync {
         return $sanitized;
     }
 
+    public function sanitize_frontend_url($input) {
+        $input = trim($input);
+        $sanitized = esc_url_raw($input);
+        if (empty($sanitized) || !filter_var($input, FILTER_VALIDATE_URL)) {
+            add_settings_error(
+                'mlm_frontend_url',
+                'invalid_url',
+                'Please enter a valid Frontend URL.',
+                'error'
+            );
+            return get_option('mlm_frontend_url');
+        }
+        return $sanitized;
+    }
+
     // Render API URL field
     public function api_base_url_field() {
         $value = get_option('mlm_api_base_url', '');
@@ -119,6 +148,13 @@ class MLM_Back_Office_Sync {
         $value = get_option('mlm_api_key', '');
         echo '<input type="text" name="mlm_api_key" value="' . esc_attr($value) . '" class="regular-text" />';
         echo '<p class="description">Enter the API key provided by your MLM back office.</p>';
+    }
+
+    // Render Frontend URL field
+    public function frontend_url_field() {
+        $value = get_option('mlm_frontend_url', '');
+        echo '<input type="url" name="mlm_frontend_url" value="' . esc_attr($value) . '" class="regular-text" />';
+        echo '<p class="description">Enter the frontend URL of your MLM back office.</p>';
     }
 
     // Render settings page
@@ -627,6 +663,96 @@ class MLM_Back_Office_Sync {
         delete_transient($transient_key);
     }
 
+    /**
+     * SSO Login Function
+     */
+    function mlm_sso_login() {
+        if (isset($_GET['token'])) {
+            $jwt_token = sanitize_text_field($_GET['token']);
+
+            $api_url = get_option('mlm_api_base_url');
+
+            $response = wp_remote_get($api_url . '/api/wp/token-verify', [
+                'headers' => ['Authorization' => 'Bearer ' . $jwt_token]
+            ]);
+
+            if (is_wp_error($response)) {
+                wp_die('User Verification Failed!');
+            }
+
+            $user_data = json_decode(wp_remote_retrieve_body($response), true);
+
+            if ($user_data && isset($user_data['wp_user_id'])) {
+
+                $wp_id = $user_data['wp_user_id'] ?? null;
+                $user = get_user_by('ID', $wp_id);
+
+                if ($user === null) {
+                    wp_die('User Not Found!');
+                }
+
+                // Log in user and redirect
+                wp_set_current_user($user->ID);
+                wp_set_auth_cookie($user->ID, true);
+                wp_safe_redirect(home_url('/'));
+                exit;
+            }
+        }
+    }
+
+    // redirect to back office
+    private function handle_mlm_redirect() {
+        global $wp_query;
+        if (isset($wp_query->query_vars['mlm_redirect'])) {
+            $path = ltrim($wp_query->query_vars['mlm_redirect'], '/');
+    
+            $user_id = get_current_user_id();
+            $token = $this->get_user_token($user_id);
+    
+            $frontend_url = get_option('mlm_frontend_url');
+            $redirect_url = $frontend_url . '/' . $path . '?token=' . $token;
+    
+            wp_redirect($redirect_url);
+            exit;
+        }
+    }
+
+    // Get user token from API
+    private function get_user_token($user_id) {
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in get_user_token.');
+            return null;
+        }
+
+        $response = wp_remote_get($api_url . '/api/wp/get-token/' . $user_id, [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'timeout' => 15,
+        ]);
+
+        if (is_wp_error($response)) {
+            $this->log_error('Failed to retrieve token for user ID ' . $user_id . ': ' . $response->get_error_message());
+            return null;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if ($response_code === 200 && isset($data['token'])) {
+            return $data['token'];
+        } else {
+            $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
+            $this->log_error("Token retrieval error for user ID $user_id: HTTP $response_code - $error_message");
+            return null;
+        }
+    }
+
     // Log error to file
     private function log_error($message) {
         $timestamp = current_time('mysql');
@@ -643,6 +769,8 @@ class MLM_Back_Office_Sync {
 
     // Activation hook
     public function activate() {
+        add_rewrite_rule('^mlm-redirect/(.*)', 'index.php?mlm_redirect=$matches[1]', 'top');
+        flush_rewrite_rules();
         if (!file_exists($this->log_file)) {
             file_put_contents($this->log_file, '');
             chmod($this->log_file, 0644);
@@ -651,7 +779,18 @@ class MLM_Back_Office_Sync {
 
     // Deactivation hook
     public function deactivate() {
+        // Remove rewrite rules
+        flush_rewrite_rules();
+
         // Optionally clear settings or log
+        delete_option('mlm_api_base_url');
+        delete_option('mlm_api_key');
+        delete_option('mlm_frontend_url');
+
+        // Optionally delete the log file
+        if (file_exists($this->log_file)) {
+            unlink($this->log_file);
+        }
     }
 }
 
