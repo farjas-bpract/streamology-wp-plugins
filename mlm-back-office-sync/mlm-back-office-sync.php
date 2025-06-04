@@ -2,7 +2,7 @@
 /*
 Plugin Name: MLM Back Office Sync
 Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office and helps SSO Login. Includes log viewer.
-Version: 1.5.1
+Version: 1.5.2
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -17,7 +17,6 @@ class MLM_Back_Office_Sync {
 
     public function __construct() {
         $this->log_file = WP_CONTENT_DIR . '/mlm-back-office-sync.log';
-        add_action('init', [$this, 'mlm_sso_login'], 1);
         add_action('admin_menu', [$this, 'add_settings_page']);
         add_action('admin_menu', [$this, 'add_log_viewer_page']);
         add_action('admin_init', [$this, 'register_settings']);
@@ -33,7 +32,16 @@ class MLM_Back_Office_Sync {
         add_action('user_register', [$this, 'sync_user_registration'], 10, 1);
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
-        add_action('template_redirect', [$this, 'handle_mlm_redirect']);
+        add_action('rest_api_init', [$this, 'register_rest_routes']);
+    }
+
+    // Register REST API routes
+    public function register_rest_routes() {
+        register_rest_route('custom-login/v1', '/login', [
+            'methods' => 'GET',
+            'callback' => [$this, 'mlm_sso_login'],
+            'permission_callback' => '__return_true', // Public access; token validation handled in callback
+        ]);
     }
 
     // Add settings page under WooCommerce menu
@@ -689,37 +697,38 @@ class MLM_Back_Office_Sync {
     /**
      * SSO Login Function
      */
-    function mlm_sso_login() {
-        if (isset($_GET['token'])) {
-            $jwt_token = sanitize_text_field($_GET['token']);
+    function mlm_sso_login(WP_REST_Request $request) {
+        
+        $jwt_token = $request->get_param('token');
 
-            $api_url = get_option('mlm_api_base_url');
+        $api_url = get_option('mlm_api_base_url');
 
-            $response = wp_remote_get($api_url . '/api/wp/token-verify', [
-                'headers' => ['Authorization' => 'Bearer ' . $jwt_token]
-            ]);
+        $response = wp_remote_get($api_url . '/api/wp/token-verify', [
+            'headers' => ['Authorization' => 'Bearer ' . $jwt_token]
+        ]);
 
-            if (is_wp_error($response)) {
-                wp_die('User Verification Failed!');
+        if (is_wp_error($response)) {
+            wp_die('User Verification Failed!');
+        }
+
+        $user_data = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($user_data && isset($user_data['wp_user_id'])) {
+
+            $wp_id = $user_data['wp_user_id'] ?? null;
+            $user = get_user_by('ID', $wp_id);
+
+            if ($user === null) {
+                wp_die('User Not Found!');
             }
 
-            $user_data = json_decode(wp_remote_retrieve_body($response), true);
-
-            if ($user_data && isset($user_data['wp_user_id'])) {
-
-                $wp_id = $user_data['wp_user_id'] ?? null;
-                $user = get_user_by('ID', $wp_id);
-
-                if ($user === null) {
-                    wp_die('User Not Found!');
-                }
-
-                // Log in user and redirect
-                wp_set_current_user($user->ID);
-                wp_set_auth_cookie($user->ID, true);
-                wp_safe_redirect(home_url('/'));
-                exit;
-            }
+            // Log in user and redirect
+            wp_set_current_user($user->ID);
+            wp_set_auth_cookie($user->ID, true);
+            wp_safe_redirect(home_url('/'));
+            exit;
+        } else {
+            wp_die('User Verification Failed!');
         }
     }
 
