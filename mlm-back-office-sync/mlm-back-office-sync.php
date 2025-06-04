@@ -736,7 +736,7 @@ class MLM_Back_Office_Sync {
     // Shortcode to handle MLM redirect
     public function mlm_redirect_shortcode($atts) {
         $atts = shortcode_atts([
-            'path' => '', // e.g., 'dashboard'
+            'path' => '/wp-register', // e.g., 'dashboard'
             'text' => 'Login to Back Office', // Button text
             'class' => 'mlm-redirect-button', // Additional CSS class
             'error' => 'show', // 'show' or 'hide' error messages
