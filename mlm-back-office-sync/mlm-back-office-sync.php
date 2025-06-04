@@ -745,24 +745,23 @@ class MLM_Back_Office_Sync {
         $path = sanitize_text_field($atts['path']);
         $button_text = sanitize_text_field($atts['text']);
         $custom_class = sanitize_html_class($atts['class']);
-        $show_error = $atts['error'] === 'show';
 
         $user_id = get_current_user_id();
         if (!$user_id) {
             $this->log_error('No logged-in user found for MLM redirect shortcode.');
-            return $show_error ? '<span class="mlm-error">Please log in to access the back office.</span>' : '';
+            return '';
         }
 
         $token = $this->get_user_token($user_id);
         if (!$token) {
             $this->log_error('Failed to generate token for user ID ' . $user_id . ' in MLM redirect shortcode.');
-            return $show_error ? '<span class="mlm-error">Error generating back office link.</span>' : '';
+            return '';
         }
 
         $frontend_url = get_option('mlm_frontend_url');
         if (empty($frontend_url)) {
             $this->log_error('Frontend URL not configured in MLM redirect shortcode.');
-            return $show_error ? '<span class="mlm-error">Back office URL not configured.</span>' : '';
+            return '';
         }
 
         // Construct the redirect URL
