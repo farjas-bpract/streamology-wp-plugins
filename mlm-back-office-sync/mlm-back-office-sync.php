@@ -33,6 +33,7 @@ class MLM_Back_Office_Sync {
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
         add_action('rest_api_init', [$this, 'register_rest_routes']);
+        add_shortcode('mlm_redirect', [$this, 'mlm_redirect_shortcode']);
     }
 
     // Register REST API routes
@@ -732,21 +733,54 @@ class MLM_Back_Office_Sync {
         }
     }
 
-    // redirect to back office
-    public function handle_mlm_redirect() {
-        global $wp_query;
-        if (isset($wp_query->query_vars['mlm_redirect'])) {
-            $path = ltrim($wp_query->query_vars['mlm_redirect'], '/');
-    
-            $user_id = get_current_user_id();
-            $token = $this->get_user_token($user_id);
-    
-            $frontend_url = get_option('mlm_frontend_url');
-            $redirect_url = $frontend_url . '/' . $path . '?token=' . $token;
-    
-            wp_redirect($redirect_url);
-            exit;
+    // Shortcode to handle MLM redirect
+    public function mlm_redirect_shortcode($atts) {
+        $atts = shortcode_atts([
+            'path' => '', // e.g., 'dashboard'
+            'text' => 'Login to Back Office', // Button text
+            'class' => 'mlm-redirect-button', // Additional CSS class
+            'error' => 'show', // 'show' or 'hide' error messages
+        ], $atts, 'mlm_redirect');
+
+        $path = sanitize_text_field($atts['path']);
+        $button_text = sanitize_text_field($atts['text']);
+        $custom_class = sanitize_html_class($atts['class']);
+        $show_error = $atts['error'] === 'show';
+
+        $user_id = get_current_user_id();
+        if (!$user_id) {
+            $this->log_error('No logged-in user found for MLM redirect shortcode.');
+            return $show_error ? '<span class="mlm-error">Please log in to access the back office.</span>' : '';
         }
+
+        $token = $this->get_user_token($user_id);
+        if (!$token) {
+            $this->log_error('Failed to generate token for user ID ' . $user_id . ' in MLM redirect shortcode.');
+            return $show_error ? '<span class="mlm-error">Error generating back office link.</span>' : '';
+        }
+
+        $frontend_url = get_option('mlm_frontend_url');
+        if (empty($frontend_url)) {
+            $this->log_error('Frontend URL not configured in MLM redirect shortcode.');
+            return $show_error ? '<span class="mlm-error">Back office URL not configured.</span>' : '';
+        }
+
+        // Construct the redirect URL
+        $path = ltrim($path, '/');
+        $nonce = wp_create_nonce('mlm_redirect_' . $user_id);
+        $redirect_url = trailingslashit($frontend_url) . ($path ? $path . '/' : '') . '?token=' . urlencode($token) . '&nonce=' . urlencode($nonce);
+
+        // Generate the button HTML
+        $button_classes = 'mlm-redirect-button ' . $custom_class;
+        $button_html = sprintf(
+            '<a href="%s" class="%s" aria-label="%s">%s</a>',
+            esc_url($redirect_url),
+            esc_attr($button_classes),
+            esc_attr('Log in to MLM Back Office' . ($path ? ' - ' . $path : '')),
+            esc_html($button_text)
+        );
+
+        return $button_html;
     }
 
     // Get user token from API
