@@ -723,10 +723,18 @@ class MLM_Back_Office_Sync {
                 wp_die('User Not Found!');
             }
 
+            $sponsor = $user_data['sponsor'] ?? '';
+
             // Log in user and redirect
             wp_set_current_user($user->ID);
             wp_set_auth_cookie($user->ID, true);
-            wp_safe_redirect(home_url('/'));
+            
+            $redirect_url = home_url('/');
+            if (!empty($sponsor)) {
+                $redirect_url = home_url('/#') . $sponsor;
+            }
+            
+            wp_safe_redirect($redirect_url);
             exit;
         } else {
             wp_die('User Verification Failed!');
