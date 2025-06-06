@@ -341,8 +341,15 @@ class MLM_Back_Office_Sync {
             $this->log_success("Order ID $order_id already synced, skipping.");
             return;
         }
+		
+		$user_id = $order->get_user_id();
+		if ($user_id) {
+			$user = get_userdata($user_id);
+			$username = $user ? $user->user_login : '';
+		} else {
+			$username = ''; // Handle guest users
+		}
     
-        $username = $order->get_meta('_billing_username');
         $items = $order->get_items();
 
         $all_items_synced = true;
@@ -756,7 +763,6 @@ class MLM_Back_Office_Sync {
 
         $user_id = get_current_user_id();
         if (!$user_id) {
-            $this->log_error('No logged-in user found for MLM redirect shortcode.');
             return '';
         }
 
