@@ -341,8 +341,8 @@ class MLM_Back_Office_Sync {
             $this->log_success("Order ID $order_id already synced, skipping.");
             return;
         }
-
-        $user_email = $order->get_billing_email();
+    
+        $username = $order->get_meta('_billing_username');
         $items = $order->get_items();
 
         $all_items_synced = true;
@@ -356,7 +356,7 @@ class MLM_Back_Office_Sync {
                 ],
                 'body' => json_encode([
                     'product_id' => $product_id,
-                    'user_email' => $user_email,
+                    'username' => $username,
                 ]),
                 'timeout' => 15,
             ]);
@@ -372,7 +372,7 @@ class MLM_Back_Office_Sync {
             $data = json_decode($body, true);
 
             if ($response_code === 200 && isset($data['status']) && $data['status']) {
-                $this->log_success("Purchase synced for product ID $product_id, user $user_email");
+                $this->log_success("Purchase synced for product ID $product_id, user $username");
             } else {
                 $error_message = isset($data['message']) ? $data['message'] : 'Unknown error';
                 $this->log_error("Purchase sync error for product ID $product_id: HTTP $response_code - $error_message response:" . print_r($data, true));
