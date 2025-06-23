@@ -2,7 +2,7 @@
 /*
 Plugin Name: MLM Back Office Sync
 Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office and helps SSO Login. Includes log viewer.
-Version: 1.5.2
+Version: 1.5.3
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -30,6 +30,8 @@ class MLM_Back_Office_Sync {
         add_filter('woocommerce_process_registration_errors', [$this, 'validate_registration'], 10, 3);
         add_action('woocommerce_checkout_process', [$this, 'validate_checkout_registration']);
         add_action('user_register', [$this, 'sync_user_registration'], 10, 1);
+        add_action('profile_update', [$this, 'sync_user_update'], 10, 2);
+        add_action('delete_user', [$this, 'sync_user_deletion']);
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
         add_action('rest_api_init', [$this, 'register_rest_routes']);
@@ -363,7 +365,7 @@ class MLM_Back_Office_Sync {
                 ],
                 'body' => json_encode([
                     'product_id' => $product_id,
-                    'username' => $username,
+                    'user_id' => $user_id, // Correct key expected by Laravel
                 ]),
                 'timeout' => 15,
             ]);
@@ -831,6 +833,74 @@ class MLM_Back_Office_Sync {
             return null;
         }
     }
+
+    public function sync_user_update($user_id, $old_user_data) {
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+    
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in sync_user_update.');
+            return;
+        }
+    
+        $user = get_user_by('id', $user_id);
+        if (!$user) {
+            $this->log_error("User not found during update sync: ID $user_id");
+            return;
+        }
+    
+        $response = wp_remote_post($api_url . '/api/wp/update-user', [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode([
+                'wp_user_id' => $user_id,
+                'email' => $user->user_email,
+                'username' => $user->user_login,
+            ]),
+            'timeout' => 15,
+        ]);
+    
+        if (is_wp_error($response)) {
+            $this->log_error('Failed to sync updated user ID ' . $user_id . ': ' . $response->get_error_message());
+        } else {
+            $this->log_success("User update synced for ID $user_id.");
+        }
+    }    
+
+    public function sync_user_deletion($user_id) {
+        $api_url = get_option('mlm_api_base_url');
+        $api_key = get_option('mlm_api_key');
+    
+        if (empty($api_url) || empty($api_key)) {
+            $this->log_error('API URL or API Key not configured in sync_user_deletion.');
+            return;
+        }
+    
+        $user = get_userdata($user_id);
+        if (!$user) {
+            $this->log_error("User not found for deletion sync: ID $user_id");
+            return;
+        }
+    
+        $response = wp_remote_post($api_url . '/api/wp/deactivate-user', [
+            'headers' => [
+                'X-API-KEY' => $api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode([
+                'wp_user_id' => $user_id,
+            ]),
+            'timeout' => 15,
+        ]);
+    
+        if (is_wp_error($response)) {
+            $this->log_error('Failed to deactivate deleted user ID ' . $user_id . ': ' . $response->get_error_message());
+        } else {
+            $this->log_success("User deletion synced for ID $user_id.");
+        }
+    }    
 
     // Log error to file
     private function log_error($message) {
