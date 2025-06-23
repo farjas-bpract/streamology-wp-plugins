@@ -365,7 +365,7 @@ class MLM_Back_Office_Sync {
                 ],
                 'body' => json_encode([
                     'product_id' => $product_id,
-                    'user_id' => $user_id, // Correct key expected by Laravel
+                    'username' => $username,
                 ]),
                 'timeout' => 15,
             ]);
@@ -454,6 +454,7 @@ class MLM_Back_Office_Sync {
     // Validate user registration via API (for standalone registration page)
     public function validate_registration($errors, $username, $password) {
         $email = isset($_POST['email']) ? sanitize_text_field($_POST['email']) : '';
+        $username = isset($_POST['username']) ? sanitize_text_field($_POST['username']) : '';
         $this->log_success("Standalone registration validation for email: $email");
         $api_url = get_option('mlm_api_base_url');
         $api_key = get_option('mlm_api_key');
@@ -548,6 +549,7 @@ class MLM_Back_Office_Sync {
         //     return;
         // }
         $email = isset($_POST['billing_email']) ? sanitize_email($_POST['billing_email']) : '';
+        $username = isset($_POST['account_username']) ? sanitize_text_field($_POST['account_username']) : '';
         $password = isset($_POST['account_password']) ? sanitize_text_field($_POST['account_password']) : '';
         $referral = isset($_POST['referral']) ? sanitize_text_field($_POST['referral']) : '';
 
@@ -564,14 +566,6 @@ class MLM_Back_Office_Sync {
             $this->log_error('API URL or API Key not configured in validate_checkout_registration.');
             wc_add_notice(__('API configuration is missing.', 'mlm-back-office-sync'), 'error');
             return;
-        }
-
-        $username = sanitize_user(current(explode('@', $email)), true);
-        $append = 1;
-        $original_username = $username;
-        while (username_exists($username)) {
-            $username = $original_username . $append;
-            $append++;
         }
 
         $data = [
@@ -685,7 +679,7 @@ class MLM_Back_Office_Sync {
         ]);
 
         if (is_wp_error($response)) {
-            $this->log_error('User sync failed for ID ' . $user_id . ': ' . $response->get_error_message());
+            $this->log_error('User sync failed for ID ' . $user_id . ': ' . $response->get_error_message() . ' Request data: ' . json_encode($data) . ' Response body: ' . wp_remote_retrieve_body($response));
             delete_transient($transient_key);
             return;
         }
