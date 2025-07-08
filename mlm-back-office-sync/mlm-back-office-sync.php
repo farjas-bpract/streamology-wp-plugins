@@ -2,7 +2,7 @@
 /*
 Plugin Name: MLM Back Office Sync
 Description: Syncs WooCommerce products, purchases, and user registrations with Cloud MLM back office and helps SSO Login. Includes log viewer.
-Version: 1.5.3
+Version: 1.5.4
 Author: Farjas T.
 License: GPL-2.0+
 */
@@ -366,6 +366,7 @@ class MLM_Back_Office_Sync {
                 'body' => json_encode([
                     'product_id' => $product_id,
                     'username' => $username,
+                    'order_id' => $order_id
                 ]),
                 'timeout' => 15,
             ]);
