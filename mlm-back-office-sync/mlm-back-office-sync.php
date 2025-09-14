@@ -651,8 +651,8 @@ class MLM_Back_Office_Sync {
 
         // $this->log_success("Attempting to retrieve transient password for user ID: $user_id, email: $email, key: $transient_key");
         if (!$password) {
-            $this->log_error("Transient password not found for user ID: $user_id, email: $email");
-            return;
+            $this->log_error("Transient password not found for user ID: $user_id, email: $email, so set as 12345678");
+			$password = '12345678';
         }
 
         $data = [
@@ -759,7 +759,7 @@ class MLM_Back_Office_Sync {
         $custom_class = sanitize_html_class($atts['class']);
 
         $user_id = get_current_user_id();
-        if (!$user_id) {
+        if (!$user_id || $user_id == 1) {
             return '';
         }
 
