@@ -1,0 +1,166 @@
+/* Referral Link Container */
+.referral-link-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin: 15px 0;
+}
+
+/* Referral Link Input */
+.referral-link-input {
+    flex: 1;
+    min-width: 250px;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: #f9f9f9;
+    color: #333;
+    cursor: pointer;
+}
+
+.referral-link-input:focus {
+    outline: none;
+    border-color: #0073aa;
+    background-color: #fff;
+}
+
+/* Copy Referral Button */
+.copy-referral-btn {
+    padding: 10px 20px;
+    background-color: #0073aa;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.copy-referral-btn:hover {
+    background-color: #005a87;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 115, 170, 0.3);
+}
+
+.copy-referral-btn:active {
+    transform: translateY(0);
+}
+
+.copy-referral-btn.copied {
+    background-color: #46b450;
+}
+
+/* Referral Link */
+.referral-link {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: #0073aa;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.referral-link:hover {
+    background-color: #005a87;
+    color: #fff;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 115, 170, 0.3);
+}
+
+/* Referral Username Display */
+.referral-username {
+    display: inline-block;
+    padding: 5px 12px;
+    background-color: #f0f0f1;
+    border-left: 3px solid #0073aa;
+    border-radius: 2px;
+    font-size: 14px;
+    color: #333;
+    margin: 10px 0;
+}
+
+/* Login Notice */
+.referral-login-notice {
+    padding: 10px 15px;
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+    border-radius: 4px;
+    color: #856404;
+    font-size: 14px;
+    margin: 15px 0;
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    .referral-link-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .referral-link-input {
+        min-width: 100%;
+    }
+    
+    .copy-referral-btn {
+        width: 100%;
+    }
+}
+
+/* Widget/Sidebar Styles */
+.widget .referral-link-container {
+    margin: 10px 0;
+}
+
+.widget .referral-link-input {
+    font-size: 13px;
+    padding: 8px 12px;
+}
+
+.widget .copy-referral-btn {
+    font-size: 13px;
+    padding: 8px 16px;
+}
+
+/* Success Animation */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.copy-referral-btn.copied {
+    animation: pulse 0.3s ease-in-out;
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    .referral-link-input {
+        background-color: #2c2c2c;
+        border-color: #444;
+        color: #fff;
+    }
+    
+    .referral-link-input:focus {
+        background-color: #1a1a1a;
+        border-color: #0073aa;
+    }
+    
+    .referral-username {
+        background-color: #2c2c2c;
+        color: #fff;
+    }
+}
